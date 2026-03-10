@@ -221,8 +221,9 @@
     addCeiling(-labCx, 0, LAB_W, LAB_D);
     addCeiling(labCx, 0, LAB_W, LAB_D);
     // Back walls of labs only (so player can walk through center)
-    addWall(-labCx - LAB_W / 2 + 0.6, 0, 1.2, LAB_D, 'lab1back');
-    addWall(labCx + LAB_W / 2 - 0.6, 0, 1.2, LAB_D, 'lab2back');
+    // Place walls at the *outer* edges of each lab alcove
+    addWall(-labCx - LAB_W / 2 - 0.6, 0, 1.2, LAB_D, 'lab1back');
+    addWall(labCx + LAB_W / 2 + 0.6, 0, 1.2, LAB_D, 'lab2back');
     // Lab equipment (tables and cabinets) with collision
     [-1, 1].forEach((s) => {
       const cx = s * labCx;
@@ -268,8 +269,9 @@
 
     const echoGroup = new THREE.Group();
     // East lab: place in back corner; instrument front (-X face) faces toward lab entrance
-    const echoCenterX = labCx + LAB_W / 2 - 0.5;
-    const echoCenterZ = -LAB_D / 2 + 0.45;
+    // Nudge inward so it doesn't intersect the back wall or floor edge
+    const echoCenterX = labCx + LAB_W / 2 - 0.85;
+    const echoCenterZ = -LAB_D / 2 + 0.75;
     echoGroup.position.set(echoCenterX, 0, echoCenterZ);
 
     const ew = 0.36; // half width in X
