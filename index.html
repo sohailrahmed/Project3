@@ -10,6 +10,9 @@
       overflow: hidden;
       font-family: 'Segoe UI', system-ui, sans-serif;
       background: #0a0a0f;
+      cursor: pointer; /* visible until pointer lock; hidden after lock via JS */
+    }
+    body.pointer-locked {
       cursor: none;
     }
     #canvas { display: block; width: 100vw; height: 100vh; }
@@ -306,13 +309,24 @@
     });
 
     controls.addEventListener('lock', () => {
+      document.body.classList.add('pointer-locked');
       promptEl.classList.add('hidden');
       crosshair.classList.remove('hidden');
     });
     controls.addEventListener('unlock', () => {
+      document.body.classList.remove('pointer-locked');
       promptEl.classList.remove('hidden');
       crosshair.classList.add('hidden');
     });
+
+    // Request pointer lock on click — required for WASD + mouse look to work
+    function tryLock() {
+      controls.lock().catch(() => {
+        /* user dismissed or browser blocked; prompt stays visible */
+      });
+    }
+    document.body.addEventListener('click', tryLock);
+    canvas.addEventListener('click', tryLock);
 
     function animate() {
       requestAnimationFrame(animate);
