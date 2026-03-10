@@ -243,6 +243,87 @@
       bounds.push({ minX: cx + 0.15, maxX: cx + 0.65, minZ: 0.55, maxZ: 1.05 });
     });
 
+    // --- Immucor Echo Lumena (proxy) — east lab back corner, walk-around with collision ---
+    // Built in world axes (no group rotation) so collision AABB matches footprint.
+    const echoMat = new THREE.MeshStandardMaterial({
+      color: 0xe8e6e0,
+      roughness: 0.75,
+      metalness: 0.08,
+    });
+    const echoTrim = new THREE.MeshStandardMaterial({
+      color: 0xc5c2bc,
+      roughness: 0.8,
+      metalness: 0.1,
+    });
+    const echoScreen = new THREE.MeshStandardMaterial({
+      color: 0x1a1f28,
+      roughness: 0.35,
+      metalness: 0.4,
+    });
+    const echoAccent = new THREE.MeshStandardMaterial({
+      color: 0x4a6fa5,
+      roughness: 0.6,
+      metalness: 0.15,
+    });
+
+    const echoGroup = new THREE.Group();
+    // East lab: place in back corner; instrument front (-X face) faces toward lab entrance
+    const echoCenterX = labCx + LAB_W / 2 - 0.5;
+    const echoCenterZ = -LAB_D / 2 + 0.45;
+    echoGroup.position.set(echoCenterX, 0, echoCenterZ);
+
+    const ew = 0.36; // half width in X
+    const ed = 0.29; // half depth in Z
+
+    // Plinth
+    const base = new THREE.Mesh(new THREE.BoxGeometry(ew * 2, 0.12, ed * 2), echoTrim);
+    base.position.y = 0.06;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    echoGroup.add(base);
+
+    // Main cabinet
+    const mainBody = new THREE.Mesh(new THREE.BoxGeometry(ew * 2 - 0.06, 0.48, ed * 2 - 0.06), echoMat);
+    mainBody.position.y = 0.12 + 0.24;
+    mainBody.castShadow = true;
+    mainBody.receiveShadow = true;
+    echoGroup.add(mainBody);
+
+    // Front panel + screen on -X side (facing player walking from center)
+    const frontPanel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, ed * 2 - 0.12), echoMat);
+    frontPanel.position.set(-ew + 0.02, 0.42, 0);
+    echoGroup.add(frontPanel);
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.32), echoScreen);
+    screen.position.set(-ew + 0.03, 0.44, 0);
+    echoGroup.add(screen);
+
+    // Upper module
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(ew * 2 - 0.14, 0.32, ed * 2 - 0.14), echoMat);
+    upper.position.y = 0.12 + 0.48 + 0.16;
+    upper.castShadow = true;
+    echoGroup.add(upper);
+    const accent = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.02), echoAccent);
+    accent.position.set(0, 0.92, ed - 0.12);
+    echoGroup.add(accent);
+
+    const topLid = new THREE.Mesh(new THREE.BoxGeometry(ew * 2 - 0.16, 0.06, ed * 2 - 0.16), echoTrim);
+    topLid.position.y = 0.12 + 0.48 + 0.32 + 0.03;
+    echoGroup.add(topLid);
+
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.25, ed * 2 - 0.1), echoTrim);
+    vent.position.set(ew - 0.08, 0.55, 0);
+    echoGroup.add(vent);
+
+    scene.add(echoGroup);
+
+    // Collision matches footprint (axis-aligned)
+    bounds.push({
+      minX: echoCenterX - ew - 0.02,
+      maxX: echoCenterX + ew + 0.02,
+      minZ: echoCenterZ - ed - 0.02,
+      maxZ: echoCenterZ + ed + 0.02,
+    });
+
     // Lighting
     const amb = new THREE.AmbientLight(0x404060, 0.6);
     scene.add(amb);
