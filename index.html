@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hospital Halls — First-Person</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0a0a0f;
+      cursor: none;
+    }
+    #canvas { display: block; width: 100vw; height: 100vh; }
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      padding: 1rem 1.5rem;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+      color: #e8e8e8;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #ui h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      opacity: 0.9;
+    }
+    #prompt {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 1rem 2rem;
+      background: rgba(0,0,0,0.85);
+      color: #b8e0ff;
+      border: 2px solid rgba(100,180,255,0.4);
+      border-radius: 8px;
+      font-size: 1rem;
+      text-align: center;
+      z-index: 20;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    #prompt.hidden { opacity: 0; pointer-events: none; }
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      margin: -10px 0 0 -10px;
+      border: 2px solid rgba(255,255,255,0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 15;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui"><h1>Hospital Halls</h1></div>
+  <div id="prompt">Click to play — WASD to move, mouse to look</div>
+  <div id="crosshair" class="hidden"></div>
+  <canvas id="canvas"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+    const canvas = document.getElementById('canvas');
+    const promptEl = document.getElementById('prompt');
+    const crosshair = document.getElementById('crosshair');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a12);
+    scene.fog = new THREE.Fog(0x0a0a12, 15, 45);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.6, 0);
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const controls = new PointerLockControls(camera, document.body);
+
+    // --- Layout (top-down: +Z = North, +X = East) ---
+    const CENTER_SIZE = 14;
+    const HALL_WIDTH = 4;
+    const HALL_LENGTH = 12;
+    const WALL_H = 3;
+    const LAB_W = 6;
+    const LAB_D = 5;
+
+    const walls = [];
+    const bounds = []; // { minX, maxX, minZ, maxZ } for collision
+
+    function addWall(x, z, w, d, name) {
+      const g = new THREE.BoxGeometry(w, WALL_H, d);
+      const m = new THREE.MeshStandardMaterial({
+        color: 0xe8ecf0,
+        roughness: 0.85,
+        metalness: 0.05,
+      });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set(x, WALL_H / 2, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      walls.push(mesh);
+      bounds.push({
+        minX: x - w / 2,
+        maxX: x + w / 2,
+        minZ: z - d / 2,
+        maxZ: z + d / 2,
+      });
+    }
+
+    function addFloor(x, z, w, d, color = 0x2a3542) {
+      const g = new THREE.PlaneGeometry(w, d);
+      const m = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.9,
+        metalness: 0,
+      });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, 0, z);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+
+    function addCeiling(x, z, w, d) {
+      const g = new THREE.PlaneGeometry(w, d);
+      const m = new THREE.MeshStandardMaterial({
+        color: 0xd0d8e0,
+        roughness: 0.9,
+        metalness: 0,
+      });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(x, WALL_H, z);
+      scene.add(mesh);
+    }
+
+    // Central area floor & ceiling
+    addFloor(0, 0, CENTER_SIZE + 1, CENTER_SIZE + 1, 0x243040);
+    addCeiling(0, 0, CENTER_SIZE + 1, CENTER_SIZE + 1);
+
+    // Central perimeter walls with gaps for 4 hallways (gap width = HALL_WIDTH)
+    const h = CENTER_SIZE / 2;
+    const edge = h + 1.5;        // wall center distance from origin
+    const gapHalf = HALL_WIDTH / 2 + 0.2;
+    const wallThick = 1.2;
+    const segW = edge - gapHalf; // half-length of each segment
+    const segC = (edge + gapHalf) / 2; // center of each half-wall
+    // North wall (two segments)
+    addWall(-segC, edge, segW, wallThick, 'n1');
+    addWall(segC, edge, segW, wallThick, 'n2');
+    // South wall
+    addWall(-segC, -edge, segW, wallThick, 's1');
+    addWall(segC, -edge, segW, wallThick, 's2');
+    // East wall (two segments)
+    addWall(edge, -segC, wallThick, segW, 'e1');
+    addWall(edge, segC, wallThick, segW, 'e2');
+    // West wall
+    addWall(-edge, -segC, wallThick, segW, 'w1');
+    addWall(-edge, segC, wallThick, segW, 'w2');
+
+    // North hallway (positive Z)
+    const northZ = h + 1.5 + HALL_LENGTH / 2 + 0.5;
+    addFloor(0, northZ, HALL_WIDTH + 2, HALL_LENGTH + 2, 0x243040);
+    addCeiling(0, northZ, HALL_WIDTH + 2, HALL_LENGTH + 2);
+    addWall(-HALL_WIDTH / 2 - 0.5, northZ, 1, HALL_LENGTH + 2, 'nw');
+    addWall(HALL_WIDTH / 2 + 0.5, northZ, 1, HALL_LENGTH + 2, 'ne');
+
+    // South hallway
+    const southZ = -h - 1.5 - HALL_LENGTH / 2 - 0.5;
+    addFloor(0, southZ, HALL_WIDTH + 2, HALL_LENGTH + 2, 0x243040);
+    addCeiling(0, southZ, HALL_WIDTH + 2, HALL_LENGTH + 2);
+    addWall(-HALL_WIDTH / 2 - 0.5, southZ, 1, HALL_LENGTH + 2, 'sw');
+    addWall(HALL_WIDTH / 2 + 0.5, southZ, 1, HALL_LENGTH + 2, 'se');
+
+    // East hallway
+    const eastX = h + 1.5 + HALL_LENGTH / 2 + 0.5;
+    addFloor(eastX, 0, HALL_LENGTH + 2, HALL_WIDTH + 2, 0x243040);
+    addCeiling(eastX, 0, HALL_LENGTH + 2, HALL_WIDTH + 2);
+    addWall(eastX, -HALL_WIDTH / 2 - 0.5, HALL_LENGTH + 2, 1, 'ew');
+    addWall(eastX, HALL_WIDTH / 2 + 0.5, HALL_LENGTH + 2, 1, 'ee');
+
+    // West hallway
+    const westX = -h - 1.5 - HALL_LENGTH / 2 - 0.5;
+    addFloor(westX, 0, HALL_LENGTH + 2, HALL_WIDTH + 2, 0x243040);
+    addCeiling(westX, 0, HALL_LENGTH + 2, HALL_WIDTH + 2);
+    addWall(westX, -HALL_WIDTH / 2 - 0.5, HALL_LENGTH + 2, 1, 'ww');
+    addWall(westX, HALL_WIDTH / 2 + 0.5, HALL_LENGTH + 2, 1, 'we');
+
+    // Laboratories (two alcoves in central area: west and east sides)
+    const labColor = 0x1a3a2a;
+    const labCx = CENTER_SIZE / 4 + 1.5;
+    addFloor(-labCx, 0, LAB_W, LAB_D, labColor);
+    addFloor(labCx, 0, LAB_W, LAB_D, labColor);
+    addCeiling(-labCx, 0, LAB_W, LAB_D);
+    addCeiling(labCx, 0, LAB_W, LAB_D);
+    // Back walls of labs only (so player can walk through center)
+    addWall(-labCx - LAB_W / 2 + 0.6, 0, 1.2, LAB_D, 'lab1back');
+    addWall(labCx + LAB_W / 2 - 0.6, 0, 1.2, LAB_D, 'lab2back');
+    // Lab equipment (tables and cabinets) with collision
+    [-1, 1].forEach((s) => {
+      const cx = s * labCx;
+      const table = new THREE.Mesh(
+        new THREE.BoxGeometry(2.2, 0.85, 1),
+        new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.8 })
+      );
+      table.position.set(cx, 0.425, 0.8);
+      table.castShadow = true;
+      scene.add(table);
+      bounds.push({ minX: cx - 1.1, maxX: cx + 1.1, minZ: 0.3, maxZ: 1.3 });
+      const equip = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.45, 0.5),
+        new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.6 })
+      );
+      equip.position.set(cx + 0.4, 1.025, 0.8);
+      scene.add(equip);
+      bounds.push({ minX: cx + 0.15, maxX: cx + 0.65, minZ: 0.55, maxZ: 1.05 });
+    });
+
+    // Lighting
+    const amb = new THREE.AmbientLight(0x404060, 0.6);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffeedd, 0.7);
+    dir.position.set(5, 15, 5);
+    dir.castShadow = true;
+    dir.shadow.mapSize.set(1024, 1024);
+    dir.shadow.camera.near = 0.5;
+    dir.shadow.camera.far = 50;
+    dir.shadow.camera.left = -20;
+    dir.shadow.camera.right = 20;
+    dir.shadow.camera.top = 20;
+    dir.shadow.camera.bottom = -20;
+    scene.add(dir);
+    const dir2 = new THREE.DirectionalLight(0xaaccff, 0.25);
+    dir2.position.set(-5, 10, -5);
+    scene.add(dir2);
+
+    // Collision: player capsule (radius 0.35, height 1.6)
+    const PLAYER_R = 0.35;
+    const PLAYER_H = 1.6;
+    const worldMinX = -h - 1.5 - HALL_LENGTH - 1;
+    const worldMaxX = h + 1.5 + HALL_LENGTH + 1;
+    const worldMinZ = -h - 1.5 - HALL_LENGTH - 1;
+    const worldMaxZ = h + 1.5 + HALL_LENGTH + 1;
+
+    function clampPosition(pos) {
+      const margin = PLAYER_R + 0.08;
+      pos.y = 1.6;
+      for (let i = 0; i < bounds.length; i++) {
+        const b = bounds[i];
+        const closestX = THREE.MathUtils.clamp(pos.x, b.minX, b.maxX);
+        const closestZ = THREE.MathUtils.clamp(pos.z, b.minZ, b.maxZ);
+        const dx = pos.x - closestX;
+        const dz = pos.z - closestZ;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < margin * margin && distSq > 1e-6) {
+          const dist = Math.sqrt(distSq);
+          const push = margin - dist;
+          pos.x += (dx / dist) * push;
+          pos.z += (dz / dist) * push;
+        }
+      }
+      pos.x = THREE.MathUtils.clamp(pos.x, worldMinX + margin, worldMaxX - margin);
+      pos.z = THREE.MathUtils.clamp(pos.z, worldMinZ + margin, worldMaxZ - margin);
+    }
+
+    const moveSpeed = 0.12;
+    const keys = { w: false, a: false, s: false, d: false };
+
+    document.addEventListener('keydown', (e) => {
+      const k = e.code.toLowerCase();
+      if (k === 'keyw') keys.w = true;
+      if (k === 'keya') keys.a = true;
+      if (k === 'keys') keys.s = true;
+      if (k === 'keyd') keys.d = true;
+    });
+    document.addEventListener('keyup', (e) => {
+      const k = e.code.toLowerCase();
+      if (k === 'keyw') keys.w = false;
+      if (k === 'keya') keys.a = false;
+      if (k === 'keys') keys.s = false;
+      if (k === 'keyd') keys.d = false;
+    });
+
+    controls.addEventListener('lock', () => {
+      promptEl.classList.add('hidden');
+      crosshair.classList.remove('hidden');
+    });
+    controls.addEventListener('unlock', () => {
+      promptEl.classList.remove('hidden');
+      crosshair.classList.add('hidden');
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (controls.isLocked) {
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        dir.y = 0;
+        dir.normalize();
+        const right = new THREE.Vector3();
+        camera.getWorldDirection(right);
+        right.cross(camera.up).normalize();
+        right.y = 0;
+        right.normalize();
+        if (keys.w) camera.position.addScaledVector(dir, moveSpeed);
+        if (keys.s) camera.position.addScaledVector(dir, -moveSpeed);
+        if (keys.a) camera.position.addScaledVector(right, -moveSpeed);
+        if (keys.d) camera.position.addScaledVector(right, moveSpeed);
+        clampPosition(camera.position);
+      }
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
